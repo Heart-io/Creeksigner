@@ -1,9 +1,199 @@
-<!doctype html>
-<html>
-  <head>
-    <title>This is the title of the webpage!</title>
-  </head>
-  <body>
-    <p>This is an example paragraph. Anything in the <strong>body</strong> tag will appear on the page, just like this <strong>p</strong> tag and its contents.</p>
-  </body>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Modern IPA Signer</title>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: 'Roboto', sans-serif;
+      background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+      color: #fff;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+    .container {
+      background-color: #1c1c1c;
+      border-radius: 12px;
+      padding: 30px;
+      max-width: 400px;
+      width: 100%;
+      box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+    }
+    h1 {
+      font-weight: 700;
+      font-size: 24px;
+      text-align: center;
+      margin-bottom: 20px;
+      color: #00d1b2;
+    }
+    form {
+      display: flex;
+      flex-direction: column;
+    }
+    .input-field {
+      margin-bottom: 15px;
+      position: relative;
+    }
+    label {
+      font-size: 14px;
+      color: #c4c4c4;
+      margin-bottom: 8px;
+      display: inline-block;
+    }
+    input[type="file"], input[type="password"] {
+      background-color: #333;
+      border: 2px solid #444;
+      border-radius: 8px;
+      color: #fff;
+      padding: 10px;
+      width: 100%;
+      font-size: 14px;
+      transition: border 0.2s ease-in-out;
+    }
+    input[type="file"]:focus, input[type="password"]:focus {
+      border-color: #00d1b2;
+    }
+    .btn {
+      background-color: #00d1b2;
+      border: none;
+      border-radius: 8px;
+      color: #fff;
+      padding: 12px;
+      font-size: 16px;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+    .btn:hover {
+      background-color: #00a68a;
+    }
+    .progress-bar {
+      width: 0;
+      height: 5px;
+      background-color: #00d1b2;
+      border-radius: 5px;
+      margin-top: 10px;
+      transition: width 10s linear;
+    }
+    .status-text {
+      margin-top: 8px;
+      font-size: 14px;
+      color: #c4c4c4;
+      text-align: center;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .status-text.show {
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>IPA Signer</h1>
+    <form id="signingForm" enctype="multipart/form-data">
+      <div class="input-field">
+        <label for="ipaFile">IPA File</label>
+        <input type="file" id="ipaFile" name="ipaFile" accept=".ipa" required>
+      </div>
+      <div class="input-field">
+        <label for="p12File">P12 Certificate</label>
+        <input type="file" id="p12File" name="p12File" accept=".p12" required>
+      </div>
+      <div class="input-field">
+        <label for="mobileProvision">Mobile Provisioning Profile</label>
+        <input type="file" id="mobileProvision" name="mobileProvision" accept=".mobileprovision" required>
+      </div>
+      <div class="input-field">
+        <label for="p12Password">P12 Password</label>
+        <input type="password" id="p12Password" name="p12Password" placeholder="Enter P12 Password" required>
+      </div>
+      <button type="submit" class="btn">Sign IPA</button>
+      <div class="progress-bar" id="progressBar"></div>
+      <div class="status-text" id="statusText">Signing in progress...</div>
+    </form>
+  </div>
+
+  <script>
+    const express = require('express');
+    const multer = require('multer');
+    const { exec } = require('child_process');
+    const path = require('path');
+
+    const app = express();
+    const port = 3000;
+
+    // Multer setup for handling file uploads
+    const upload = multer({ dest: 'uploads/' });
+
+    // Serve the HTML file
+    app.get('/', (req, res) => {
+        res.sendFile(path.join(__dirname, 'index.html'));
+    });
+
+    // Backend logic to handle IPA signing
+    app.post('/sign', upload.fields([{ name: 'ipaFile' }, { name: 'p12File' }, { name: 'mobileProvision' }]), (req, res) => {
+        const ipaFile = req.files.ipaFile[0];
+        const p12File = req.files.p12File[0];
+        const mobileProvision = req.files.mobileProvision[0];
+        const p12Password = req.body.p12Password;
+
+        // Signing command with correct paths
+        const signCommand = `
+          /usr/bin/codesign -f -s "${p12File.path}" \
+          --keychain ~/Library/Keychains/login.keychain-db \
+          --entitlements ${mobileProvision.path} "${ipaFile.path}"
+        `;
+
+        exec(signCommand, (error, stdout, stderr) => {
+            if (error) {
+                return res.status(500).send(`Error during signing: ${stderr}`);
+            }
+            res.send('IPA signed successfully. You can download it <a href="/download/${ipaFile.filename}">here</a>.');
+        });
+    });
+
+    app.listen(port, '0.0.0.0', () => {
+        console.log(`Server running on http://creeksigner:${port}`);
+    });
+
+    document.getElementById('signingForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      const formData = new FormData(document.getElementById('signingForm'));
+      
+      // Show progress bar and status text
+      const progressBar = document.getElementById('progressBar');
+      const statusText = document.getElementById('statusText');
+      progressBar.style.width = '100%';
+      statusText.classList.add('show');
+
+      fetch('/sign', {
+        method: 'POST',
+        body: formData,
+      })
+      .then(response => response.text())
+      .then(data => {
+        statusText.textContent = data;  // Show success message
+        statusText.style.color = '#00d1b2';
+      })
+      .catch(err => {
+        statusText.textContent = 'Error during signing!';
+        statusText.style.color = 'red';
+      });
+
+      // Reset the progress bar after 10 seconds
+      setTimeout(() => {
+        progressBar.style.width = '0';
+      }, 10000);
+    });
+  </script>
+</body>
 </html>
